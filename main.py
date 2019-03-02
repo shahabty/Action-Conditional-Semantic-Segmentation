@@ -13,8 +13,13 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import torchvision.utils as vutils
 from random import randint
+import matplotlib.pyplot as plt
+
 cudnn.benchmark=False
 writer = SummaryWriter(comment='code')
+
+one_hot_train_histogram = {}
+one_hot_val_histogram = {}
 
 args = {
 'train_batch_size':4,
@@ -22,8 +27,8 @@ args = {
 'lr':1e-4,
 'num_worker': 24,
 'max_epoch':100,
-'device1':'cuda:1',
-'device2':'cuda:0',
+'device1':'cuda:0',
+'device2':'cuda:1',
 'exp':1,
 'regression': False,
 }
@@ -32,7 +37,7 @@ def main(args):
     model = Model(args['train_batch_size'],256,512,4,num_class = 13).to(args['device1']) 
 
     print('training with 4 images as input and predicting the fifth one in carla with regression')
-    train_set = carla(mode = 'train')
+    train_set = carla(mode = 'train', skip_within_item = 0, skip_between_items = 0)
     val_set = carla(mode = 'val')
 
     train_loader = DataLoader(train_set,batch_size = args['train_batch_size'],num_workers = args['num_worker'],shuffle = False, pin_memory=True) 
@@ -45,9 +50,9 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss(ignore_index = 0).to(args['device1'])
     optimizer = optim.Adam(model.parameters(),lr =args['lr'],betas = (0.9,0.999))
-    train(model,criterion,optimizer,train_loader,val_loader)
+    train(model,criterion,optimizer,train_loader,val_loader, create_histogram_image = True)
 
-def train(model,criterion,optimizer,train_loader,val_loader):
+def train(model,criterion,optimizer,train_loader,val_loader, create_histogram_image = False):
     model.train()
     vi = 0
     total_loss = 0.0
@@ -57,7 +62,18 @@ def train(model,criterion,optimizer,train_loader,val_loader):
         for data_future,speed_future,frames,gt in tqdm(train_loader,'iter: '):
             frames = Variable(frames).to(args['device1']).float()
             gt = Variable(gt).to(args['device1']).long()
-            data_future = Variable(one_hot(data_future)).to(args['device1'])
+
+            data_future_one_hot = one_hot(data_future)
+
+            if data_future_one_hot in one_hot_train_histogram:
+                one_hot_train_histogram[data_future_one_hot] += 1
+            else:
+                one_hot_train_histogram[data_future_one_hot] = 1
+
+            if create_histogram_image:
+                create_histogram_image(data_future_one_hot, 'train_histogram.png')
+
+            data_future = Variable(data_future_one_hot).to(args['device1'])
             #frame_vis = vutils.make_grid(carla.colorize_mask(frames[0][0].data.cpu().numpy()))
             output = model(frames,data_future,speed_future)
 #            output_vis = vutils.make_grid(carla.colorize_mask(output.max(1)[1][0].data.cpu().numpy()))
@@ -80,9 +96,9 @@ def train(model,criterion,optimizer,train_loader,val_loader):
         print('-------------------------------------')
         print('train loss: %f'%(total_loss/vi))
         print('-------------------------------------')
-        validate(model,epoch,criterion,val_loader,optimizer)
+        validate(model,epoch,criterion,val_loader,optimizer, create_histogram_image = create_histogram_image)
 
-def validate(model,epoch,criterion,val_loader,optimizer):
+def validate(model,epoch,criterion,val_loader,optimizer, create_histogram_image = False):
     model.eval()
     vi = 0
     total_loss = 0.0
@@ -92,9 +108,21 @@ def validate(model,epoch,criterion,val_loader,optimizer):
 
     for data_future,speed_future,frames,gt in tqdm(val_loader,'iter: '):
         with torch.no_grad():
+
             frames = Variable(frames).to(args['device1']).float()
             gt = Variable(gt).to(args['device1']).long()
-            data_future = Variable(one_hot(data_future)).to(args['device1'])
+
+            data_future_one_hot = one_hot(data_future)
+
+            if data_future_one_hot in one_hot_val_histogram:
+                one_hot_val_histogram[data_future_one_hot] += 1
+            else:
+                one_hot_val_histogram[data_future_one_hot] = 1
+
+            if create_histogram_image:
+                create_histogram_image(data_future_one_hot, 'val_histogram.png')
+
+            data_future = Variable(data_future_one_hot).to(args['device1'])
             output = model(frames,data_future,speed_future)
 
             output_vis = vutils.make_grid(carla.colorize_mask(output.max(1)[1][0].data.cpu().numpy()))
@@ -153,6 +181,16 @@ def evaluate(predictions, gts, num_classes = 19):
     freq = hist.sum(axis=1) / hist.sum()
     fwavacc = (freq[freq > 0] * iu[freq > 0]).sum()
     return acc, acc_cls, mean_iu, fwavacc
+
+def create_histogram_image(dict_values, file_name):
+
+    plt.bar(dict_values.keys(), dict_values.values(), align='center', alpha=0.5)
+    #plt.xticks(y_pos, objects)
+    plt.ylabel('Occurrence')
+    plt.title('Variations')
+
+    plt.show()
+    plt.savefig(file_name)
 
 
 '''

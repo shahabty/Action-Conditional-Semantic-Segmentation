@@ -34,8 +34,8 @@ class Encoder(nn.Module):
         x = self.layer1(x1)
         x2 = self.layer2(x)
         x3 = self.layer3(x2)
-        latent = self.layer4(x3) 
-        return latent,x3,x2,x1
+        x4 = self.layer4(x3) 
+        return x4,x3,x2,x1
 
     def weight_init(self,m):
         if isinstance(m, nn.Conv2d):
@@ -76,21 +76,23 @@ class Action_Encoder(nn.Module):
             nn.ReLU(True),
             nn.Linear(32,3*2)
         )
- #       self.layer = nn.Linear(in_size,out_size)
+
         self.weight_init() 
-    def forward(self, a,x4,x3,x2,x1):
+    def forward(self, a,x): #,x4,x3,x2,x1):
         theta = self.stn(a)
-        grid4 = F.affine_grid(theta,x4.size())
-        x4 = F.grid_sample(x4,grid4)
+        grid = F.affine_grid(theta,x)
+        return F.grid_sample(x,grid)
+        #grid4 = F.affine_grid(theta,x4.size())
+        #x4 = F.grid_sample(x4,grid4)
 
-        grid3 = F.affine_grid(theta,x3.size())
-        x3 = F.grid_sample(x3,grid3)
+        #grid3 = F.affine_grid(theta,x3.size())
+        #x3 = F.grid_sample(x3,grid3)
 
-        grid2 = F.affine_grid(theta,x2.size())
-        x2 = F.grid_sample(x2,grid2)
-        grid1 = F.affine_grid(theta,x1.size())
-        x1 = F.grid_sample(x1,grid1)
-        return x4,x3,x2,x1
+        #grid2 = F.affine_grid(theta,x2.size())
+        #x2 = F.grid_sample(x2,grid2)
+        #grid1 = F.affine_grid(theta,x1.size())
+        #x1 = F.grid_sample(x1,grid1)
+        #return x4,x3,x2,x1
 
     def stn(self,x):
         theta = self.action_to_loc(x)
@@ -158,8 +160,9 @@ class Model(nn.Module):
 #        self.speed_encoder = Speed_Encoder()
 
     def forward(self,x,action_future,speed_future):
+#        x = self.action_encoder(a,x)
         x4,x3,x2,x1 = self.encoder(x)
-
+        
 #        x4,x3,x2,x1 = self.action_encoder(action_future,x4,x3,x2,x1)
 #        s = self.speed_encoder(speed_current).reshape((-1,2048,8,16))
         return self.decoder(x4,x3,x2,x1)
