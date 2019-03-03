@@ -11,6 +11,7 @@ from torch.backends import cudnn
 from cnn_model import Model
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
+import math
 import torchvision.utils as vutils
 from random import randint
 import matplotlib.pyplot as plt
@@ -50,9 +51,9 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss(ignore_index = 0).to(args['device1'])
     optimizer = optim.Adam(model.parameters(),lr =args['lr'],betas = (0.9,0.999))
-    train(model,criterion,optimizer,train_loader,val_loader, create_histogram_image = True)
+    train(model, criterion, optimizer, train_loader, val_loader, histogram_required= True)
 
-def train(model,criterion,optimizer,train_loader,val_loader, create_histogram_image = False):
+def train(model, criterion, optimizer, train_loader, val_loader, histogram_required = False):
     model.train()
     vi = 0
     total_loss = 0.0
@@ -63,17 +64,16 @@ def train(model,criterion,optimizer,train_loader,val_loader, create_histogram_im
             frames = Variable(frames).to(args['device1']).float()
             gt = Variable(gt).to(args['device1']).long()
 
-            data_future_one_hot = one_hot(data_future)
+            for df in data_future:
 
-            if data_future_one_hot in one_hot_train_histogram:
-                one_hot_train_histogram[data_future_one_hot] += 1
-            else:
-                one_hot_train_histogram[data_future_one_hot] = 1
+                df = math.floor(df)
 
-            if create_histogram_image:
-                create_histogram_image(data_future_one_hot, 'train_histogram.png')
+                if df in one_hot_train_histogram:
+                    one_hot_train_histogram[df] += 1
+                else:
+                    one_hot_train_histogram[df] = 1
 
-            data_future = Variable(data_future_one_hot).to(args['device1'])
+            data_future = Variable(one_hot(data_future)).to(args['device1'])
             #frame_vis = vutils.make_grid(carla.colorize_mask(frames[0][0].data.cpu().numpy()))
             output = model(frames,data_future,speed_future)
 #            output_vis = vutils.make_grid(carla.colorize_mask(output.max(1)[1][0].data.cpu().numpy()))
@@ -96,9 +96,14 @@ def train(model,criterion,optimizer,train_loader,val_loader, create_histogram_im
         print('-------------------------------------')
         print('train loss: %f'%(total_loss/vi))
         print('-------------------------------------')
-        validate(model,epoch,criterion,val_loader,optimizer, create_histogram_image = create_histogram_image)
 
-def validate(model,epoch,criterion,val_loader,optimizer, create_histogram_image = False):
+        validate(model, epoch, criterion, val_loader, optimizer)
+
+        if histogram_required:
+            create_histogram_image(one_hot_train_histogram, 'train_histogram.png')
+            create_histogram_image(one_hot_val_histogram, 'val_histogram.png')
+
+def validate(model, epoch, criterion, val_loader, optimizer):
     model.eval()
     vi = 0
     total_loss = 0.0
@@ -112,17 +117,16 @@ def validate(model,epoch,criterion,val_loader,optimizer, create_histogram_image 
             frames = Variable(frames).to(args['device1']).float()
             gt = Variable(gt).to(args['device1']).long()
 
-            data_future_one_hot = one_hot(data_future)
+            for df in data_future:
 
-            if data_future_one_hot in one_hot_val_histogram:
-                one_hot_val_histogram[data_future_one_hot] += 1
-            else:
-                one_hot_val_histogram[data_future_one_hot] = 1
+                df = math.floor(df)
 
-            if create_histogram_image:
-                create_histogram_image(data_future_one_hot, 'val_histogram.png')
+                if df in one_hot_val_histogram:
+                    one_hot_val_histogram[df] += 1
+                else:
+                    one_hot_val_histogram[df] = 1
 
-            data_future = Variable(data_future_one_hot).to(args['device1'])
+            data_future = Variable(one_hot(data_future)).to(args['device1'])
             output = model(frames,data_future,speed_future)
 
             output_vis = vutils.make_grid(carla.colorize_mask(output.max(1)[1][0].data.cpu().numpy()))
@@ -184,8 +188,7 @@ def evaluate(predictions, gts, num_classes = 19):
 
 def create_histogram_image(dict_values, file_name):
 
-    plt.bar(dict_values.keys(), dict_values.values(), align='center', alpha=0.5)
-    #plt.xticks(y_pos, objects)
+    plt.bar(dict_values.keys(), dict_values.values(), align='center', color='blue')
     plt.ylabel('Occurrence')
     plt.title('Variations')
 
